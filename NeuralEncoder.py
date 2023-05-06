@@ -9,35 +9,34 @@ mne.set_log_level('ERROR')
 
 
 class NeuralEncoder:
-    def __init__(self, subject_id, method, regularization=True, alphas=None):
+    def __init__(self, subject_id, method, regularization=True, alphas=None, init_estimator=0.0):
         self.subject_id = subject_id
         self.method = method
         self.regularization = regularization
         if regularization not in [True, False]:
             raise ValueError('Regularization must be `True` or `False``.')
-        self.init_estimator = 0.0
+        self.init_estimator = init_estimator
 
         self.alphas = alphas
 
         if method == 'cortical':
             self.fs = 128
             self.trf_min, self.trf_max = -0.300, 0.800
-            self.xval_min, self.xval_max = -0.050, 0.350
+            # self.xval_min, self.xval_max = -0.050, 0.350
             # self.xval_min, self.xval_max = self.trf_min, self.trf_max
             self.speech = np.load('audio/low_envelopes.npy')
-            self.cluster = auditory_cluster
-            indices = [electrodes.index(electrode) for electrode in self.cluster]
-            self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')[..., indices]
-            # self.cluster = ['Mean']
-            # self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')
+            self.cluster = electrodes
+            # indices = [electrodes.index(electrode) for electrode in self.cluster]
+            # self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')[..., indices]
+            self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')
 
         elif method == 'subcortical':
             self.fs = 4096
             self.trf_min, self.trf_max = -0.006, 0.026
-            self.xval_min, self.xval_max = 0.002, 0.014
+            # self.xval_min, self.xval_max = 0.002, 0.014
             self.speech = np.load('audio/rectified_audios.npy')
-            self.cluster = ['Pz', 'Fz', 'Cz']
-            self.eeg = np.load(f'eeg/subcortex/{subject_id}.npy')
+            self.cluster = ['Cz']  # ['Pz', 'Fz', 'Cz']
+            self.eeg = np.load(f'eeg/subcortex/{subject_id}.npy')  # [..., 2][..., np.newaxis]  # Cz only
 
         else:
             raise ValueError(f'`{self.method}` must be `cortical` or `subcortical`.')
@@ -45,9 +44,9 @@ class NeuralEncoder:
         self.kernel_size = int(np.ceil((self.trf_max - self.trf_min) * self.fs))
 
         self.model = ReceptiveField(
-            tmin=None,
-            tmax=None,
-            estimator=self.init_estimator,
+            tmin=self.trf_min,
+            tmax=self.trf_max,
+            estimator=None,
             sfreq=self.fs,
             scoring='corrcoef'
         )
@@ -97,22 +96,18 @@ class NeuralEncoder:
                         # Pool activity for tunining (n_times, n_epochs, n_channels)!
                         speech_train = speech_train_outer[:, inner_train_indices, :]
                         speech_val = speech_train_outer[:, inner_val_indices, :]
-                        eeg_train = eeg_train_outer[:, inner_train_indices, :].mean(2, keepdims=True)
-                        eeg_val = eeg_train_outer[:, inner_val_indices, :].mean(2, keepdims=True)
+                        eeg_train = eeg_train_outer[:, inner_train_indices, :]
+                        eeg_val = eeg_train_outer[:, inner_val_indices, :]
 
                         estimator = TimeDelayingRidge(
-                            tmin=self.xval_min,
-                            tmax=self.xval_max,
+                            tmin=self.trf_min,
+                            tmax=self.trf_max,
                             sfreq=self.fs,
                             reg_type='laplacian',
                             alpha=alpha
                         )
 
-                        self.model.set_params(
-                            tmin=self.xval_min,
-                            tmax=self.xval_max,
-                            estimator=estimator
-                        )
+                        self.model.set_params(estimator=estimator)
 
                         self.model.fit(speech_train, eeg_train)
                         inner_score = self.model.score(speech_val, eeg_val)
@@ -126,17 +121,8 @@ class NeuralEncoder:
                         best_alpha = alpha
 
                 # Use the best alpha found in the inner loop in the outer loop
-                estimator.set_params(
-                    tmin=self.trf_min,
-                    tmax=self.trf_max,
-                    alpha=best_alpha
-                )
-
-                self.model.set_params(
-                    tmin=self.trf_min,
-                    tmax=self.trf_max,
-                    estimator=estimator
-                )
+                estimator.set_params(alpha=best_alpha)
+                self.model.set_params(estimator=estimator)
 
             # If regularization is not used
             elif not self.regularization:
@@ -155,6 +141,8 @@ class NeuralEncoder:
                 )
 
             self.model.fit(speech_train_outer, eeg_train_outer)
+
+            # print(self.model.delays_ / float(self.model.sfreq))
 
             # Evaluate the model on the outer test set
             score = self.model.score(speech_test, eeg_test)

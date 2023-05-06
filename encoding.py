@@ -22,13 +22,13 @@ def plot_results(encoder, kernel, score):
     times = encoder.model.delays_ / encoder.model.sfreq * 1000
 
     if encoder.method == 'cortical':
-        fig = plt.figure(figsize=(8.0, 4.0))
-        gs = fig.add_gridspec(2, 2, width_ratios=[2, 1], height_ratios=[1, 1])
+        fig = plt.figure(figsize=(12, 8))
+        gs = fig.add_gridspec(2, 2, width_ratios=[2, 1], height_ratios=[1, 2])
         ax1 = fig.add_subplot(gs[:, 0])
         ax2 = fig.add_subplot(gs[0, 1])
         ax3 = fig.add_subplot(gs[1, 1])
 
-        t_min, t_max = -150, 450
+        t_min, t_max = -200, 500
         cluster = encoder.cluster
 
     elif encoder.method == 'subcortical':
@@ -42,21 +42,27 @@ def plot_results(encoder, kernel, score):
 
     # Kernel
     if encoder.method == 'cortical':
-        colors = ['#b2182b', '#ef8a62', '#fddbc7', '#e0e0e0', '#999999', '#4d4d4d']
-        for c in range(kernel.shape[0]):
-            ax1.plot(times, kernel[c, :], color=colors[c])
-        ax1.plot(times, kernel.mean(0), linewidth=15, alpha=0.25, color='gray')
+        # colors = ['#b2182b', '#ef8a62', '#fddbc7', '#e0e0e0', '#999999', '#4d4d4d']
+        # colors = plt.cm.tab20b(np.linspace(0, 1, kernel.shape[0]))
+        # for c in range(kernel.shape[0]):
+        #     ax1.plot(times, kernel[c, :], color=colors[c])
+        ax1.plot(times, kernel.T)
+        # ax1.plot(times, kernel.mean(0), linewidth=15, alpha=0.25, color='gray')
     elif encoder.method == 'subcortical':
         colors = ['#f768a1', '#fcc5c0', '#c51b8a']
+        # colors = ['#c51b8a']
         for c in range(kernel.shape[0]):
             ax1.plot(times, kernel[c, :], color=colors[c])
 
     ax1.set_xlim(t_min, t_max)
-    # ax1.set_ylim(-0.02, 0.02)
+    if encoder.method == 'cortical':
+        ax1.set_ylim(-0.015, 0.015)
+    # if encoder.method == 'subcortical':
+    #     ax1.set_ylim(-0.015, 0.015)
     ax1.set_xlabel('Time (ms)')
     ax1.set_ylabel('Weights')
     ax1.set_title(f'Kernel with best alpha = {encoder.best_alpha}, r = {round(score.mean(0), 4)}')
-    ax1.legend(labels=cluster)
+    # ax1.legend(labels=cluster)
 
     # Hyper-parameter tuning
     x, y = encoder.best_alpha, np.max(encoder.mean_scores_alpha)
@@ -71,7 +77,7 @@ def plot_results(encoder, kernel, score):
         # 2D filter
         ax3.imshow(
             kernel,
-            cmap='RdBu',
+            cmap='RdBu_r',
             aspect='auto',
             extent=[(times)[0], (times)[-1], 0, len(cluster)],
             # interpolation='spline16'
@@ -80,11 +86,11 @@ def plot_results(encoder, kernel, score):
         ax3.set_title('2D filter')
         ax3.set_xlabel('Time (ms)')
         ax3.set_ylabel('Channels')
-        ax3.set_yticks(np.arange(6))
+        ax3.set_yticks(np.arange(len(cluster)))
         ax3.set_yticklabels(cluster[::-1])
 
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
     pdf_filename = f'plots/{encoder.method}/{encoder.subject_id}.pdf'
     fig.savefig(pdf_filename, format='pdf', bbox_inches='tight')
