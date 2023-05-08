@@ -105,7 +105,7 @@ def main():
 
         # Cortical encoding
         method = 'cortical'
-        encoder = NeuralEncoder(subject_id, method, regularization=False, alphas=alphas, init_estimator=100000.0)
+        encoder = NeuralEncoder(subject_id, method=method, regularization=False, alphas=alphas, init_estimator=100000.0)
         kernel, score = encoder.fit()
         save_kernel_and_score(subject_id, method, kernel, score)
 

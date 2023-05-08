@@ -35,13 +35,13 @@ class NeuralEncoder:
             self.speech = np.load('audio/rectified_audios.npy')
             self.cluster = ['Cz']  # ['Pz', 'Fz', 'Cz']
             self.eeg = np.load(f'eeg/subcortex/{subject_id}.npy')  # [..., 2][..., np.newaxis]  # Cz only
+  
+        else:
+            raise ValueError(f'`{method}` invalid, method must be `cortical` or `subcortical`.')
 
         if self.subject_id == 'pilot03':
             # For this participant, we forgot to record right away, this is why the first trial is missing.
             self.speech = np.delete(self.speech, 0, axis=1)
-
-        else:
-            raise ValueError(f'`{self.method}` must be `cortical` or `subcortical`.')
 
         self.kernel_size = int(np.ceil((self.trf_max - self.trf_min) * self.fs))
 
