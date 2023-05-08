@@ -36,6 +36,10 @@ class NeuralEncoder:
             self.cluster = ['Cz']  # ['Pz', 'Fz', 'Cz']
             self.eeg = np.load(f'eeg/subcortex/{subject_id}.npy')  # [..., 2][..., np.newaxis]  # Cz only
 
+        if self.subject_id == 'pilot03':
+            # For this participant, we forgot to record right away, this is why the first trial is missing.
+            self.speech = np.delete(self.speech, 0, axis=1)
+
         else:
             raise ValueError(f'`{self.method}` must be `cortical` or `subcortical`.')
 
@@ -64,8 +68,11 @@ class NeuralEncoder:
         X = self.speech
         y = self.eeg
 
-        n_splits_outer = 10
-        n_splits_inner = 5
+        if self.regularization:
+            n_splits_outer = 10
+            n_splits_inner = 5
+        elif not self.regularization:
+            n_splits_outer = self.speech.shape[1]
 
         # Initialize arrays to store scores and kernel weights
         kernels = np.full((n_splits_outer, y.shape[2], self.kernel_size), np.nan)

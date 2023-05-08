@@ -115,7 +115,7 @@ def main():
 
         # Subcortical encoding
         method = 'subcortical'
-        subcoder = NeuralEncoder(subject_id, method, regularization=False, alphas=alphas, init_estimator=100000.0)
+        subcoder = NeuralEncoder(subject_id, method, regularization=False, alphas=alphas, init_estimator=10000000.0)
         kernel, score = subcoder.fit()
         save_kernel_and_score(subject_id, method, kernel, score)
 
