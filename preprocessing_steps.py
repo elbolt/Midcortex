@@ -136,11 +136,13 @@ def preprocess_eeg(subjects, method):
 
 
 if __name__ == '__main__':
-    # Speech processing
-    print('Speech signal processing.')
-    preprocess_speech(audio_snips, method='cortical')
-    preprocess_speech(audio_snips, method='subcortical')
-    print('--------------------')
+    # # Speech processing
+    # print('Speech signal processing.')
+    # preprocess_speech(audio_snips, method='cortical')
+    # preprocess_speech(audio_snips, method='subcortical')
+    # print('--------------------')
+
+    subjects = ['p06', 'p09', 'p11', 'p13']
 
     # EEG extraction
     print('EEG signal exctraction.')

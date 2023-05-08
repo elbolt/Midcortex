@@ -22,18 +22,16 @@ class NeuralEncoder:
         if method == 'cortical':
             self.fs = 128
             self.trf_min, self.trf_max = -0.300, 0.800
-            # self.xval_min, self.xval_max = -0.050, 0.350
-            # self.xval_min, self.xval_max = self.trf_min, self.trf_max
+            self.xval_min, self.xval_max = -0.100, 0.300
             self.speech = np.load('audio/low_envelopes.npy')
-            self.cluster = electrodes
-            # indices = [electrodes.index(electrode) for electrode in self.cluster]
-            # self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')[..., indices]
-            self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')
+            self.cluster = auditory_cluster
+            indices = [electrodes.index(electrode) for electrode in self.cluster]
+            self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')[..., indices]
 
         elif method == 'subcortical':
             self.fs = 4096
             self.trf_min, self.trf_max = -0.006, 0.026
-            # self.xval_min, self.xval_max = 0.002, 0.014
+            self.xval_min, self.xval_max = 0.002, 0.014
             self.speech = np.load('audio/rectified_audios.npy')
             self.cluster = ['Cz']  # ['Pz', 'Fz', 'Cz']
             self.eeg = np.load(f'eeg/subcortex/{subject_id}.npy')  # [..., 2][..., np.newaxis]  # Cz only
@@ -43,9 +41,17 @@ class NeuralEncoder:
 
         self.kernel_size = int(np.ceil((self.trf_max - self.trf_min) * self.fs))
 
-        self.model = ReceptiveField(
+        self.estimator = TimeDelayingRidge(
             tmin=self.trf_min,
             tmax=self.trf_max,
+            sfreq=self.fs,
+            reg_type='laplacian',
+            alpha=0.0
+        )
+
+        self.model = ReceptiveField(
+            tmin=None,
+            tmax=None,
             estimator=None,
             sfreq=self.fs,
             scoring='corrcoef'
@@ -78,7 +84,7 @@ class NeuralEncoder:
             eeg_test = y[:, test_indices, :]
 
             # Initialize the inner loop for hyperparameter tuning
-            best_alpha = 0.0
+            best_alpha = None
             best_inner_score = float('-inf')
             mean_scores_alpha = np.full((len(self.alphas)), np.nan)
 
@@ -89,60 +95,67 @@ class NeuralEncoder:
                 for alpha_idx, alpha in enumerate(self.alphas):
                     inner_scores = []
 
+                    self.estimator.set_params(
+                        tmin=self.xval_min,
+                        tmax=self.xval_max,
+                        alpha=alpha
+                    )
+                    self.model.set_params(
+                        tmin=self.xval_min,
+                        tmax=self.xval_max,
+                        estimator=self.estimator
+                    )
+
                     # Iterate over inner folds for cross-validation
                     for _, (inner_train_indices, inner_val_indices) in enumerate(
-                            inner_k_folds.split(np.arange(speech_train_outer.shape[1]))
-                    ):
-                        # Pool activity for tunining (n_times, n_epochs, n_channels)!
+                            inner_k_folds.split(np.arange(speech_train_outer.shape[1]))):
+
+                        # (n_times, n_epochs, n_channels)!
                         speech_train = speech_train_outer[:, inner_train_indices, :]
                         speech_val = speech_train_outer[:, inner_val_indices, :]
                         eeg_train = eeg_train_outer[:, inner_train_indices, :]
                         eeg_val = eeg_train_outer[:, inner_val_indices, :]
 
-                        estimator = TimeDelayingRidge(
-                            tmin=self.trf_min,
-                            tmax=self.trf_max,
-                            sfreq=self.fs,
-                            reg_type='laplacian',
-                            alpha=alpha
-                        )
-
-                        self.model.set_params(estimator=estimator)
-
                         self.model.fit(speech_train, eeg_train)
-                        inner_score = self.model.score(speech_val, eeg_val)
-                        inner_scores.append(inner_score)
+                        inner_score = self.model.score(speech_val, eeg_val)  # score array for each electrode
+                        inner_scores.append(inner_score)  # lists with 5 score arrays
 
-                    mean_inner_score = np.mean(inner_scores)
+                    mean_inner_score = np.mean(inner_scores)  # mean score of electrodes for each of the 5 splits
+
+                    # Cache mean scroes across alphas for plotting
                     mean_scores_alpha[alpha_idx] = mean_inner_score
 
+                    # Update `best_alpha` if the score gets bigger.
                     if mean_inner_score > best_inner_score:
                         best_inner_score = mean_inner_score
                         best_alpha = alpha
 
-                # Use the best alpha found in the inner loop in the outer loop
-                estimator.set_params(alpha=best_alpha)
-                self.model.set_params(estimator=estimator)
-
-            # If regularization is not used
-            elif not self.regularization:
-                estimator = TimeDelayingRidge(
+                # Use the best alpha found in the inner loop in the outer loop and update lag range
+                self.estimator.set_params(
                     tmin=self.trf_min,
                     tmax=self.trf_max,
-                    sfreq=self.fs,
-                    reg_type='laplacian',
-                    alpha=self.init_estimator
+                    alpha=best_alpha
                 )
-
                 self.model.set_params(
                     tmin=self.trf_min,
                     tmax=self.trf_max,
-                    estimator=estimator
+                    estimator=self.estimator
+                )
+
+            # If regularization is not used, directly set estimator and model paramets to full lags range
+            elif not self.regularization:
+                self.estimator.set_params(
+                    tmin=self.trf_min,
+                    tmax=self.trf_max,
+                    alpha=self.init_estimator
+                )
+                self.model.set_params(
+                    tmin=self.trf_min,
+                    tmax=self.trf_max,
+                    estimator=self.estimator
                 )
 
             self.model.fit(speech_train_outer, eeg_train_outer)
-
-            # print(self.model.delays_ / float(self.model.sfreq))
 
             # Evaluate the model on the outer test set
             score = self.model.score(speech_test, eeg_test)

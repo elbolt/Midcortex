@@ -22,8 +22,8 @@ def plot_results(encoder, kernel, score):
     times = encoder.model.delays_ / encoder.model.sfreq * 1000
 
     if encoder.method == 'cortical':
-        fig = plt.figure(figsize=(12, 8))
-        gs = fig.add_gridspec(2, 2, width_ratios=[2, 1], height_ratios=[1, 2])
+        fig = plt.figure(figsize=(8.0, 4.0))
+        gs = fig.add_gridspec(2, 2, width_ratios=[2, 1], height_ratios=[1, 1])
         ax1 = fig.add_subplot(gs[:, 0])
         ax2 = fig.add_subplot(gs[0, 1])
         ax3 = fig.add_subplot(gs[1, 1])
@@ -42,12 +42,10 @@ def plot_results(encoder, kernel, score):
 
     # Kernel
     if encoder.method == 'cortical':
-        # colors = ['#b2182b', '#ef8a62', '#fddbc7', '#e0e0e0', '#999999', '#4d4d4d']
-        # colors = plt.cm.tab20b(np.linspace(0, 1, kernel.shape[0]))
-        # for c in range(kernel.shape[0]):
-        #     ax1.plot(times, kernel[c, :], color=colors[c])
-        ax1.plot(times, kernel.T)
-        # ax1.plot(times, kernel.mean(0), linewidth=15, alpha=0.25, color='gray')
+        colors = ['#b2182b', '#ef8a62', '#fddbc7', '#e0e0e0', '#999999', '#4d4d4d']
+        for c in range(kernel.shape[0]):
+            ax1.plot(times, kernel[c, :], color=colors[c])
+        ax1.plot(times, kernel.mean(0), linewidth=15, alpha=0.25, color='gray')
     elif encoder.method == 'subcortical':
         colors = ['#f768a1', '#fcc5c0', '#c51b8a']
         # colors = ['#c51b8a']
@@ -56,13 +54,13 @@ def plot_results(encoder, kernel, score):
 
     ax1.set_xlim(t_min, t_max)
     if encoder.method == 'cortical':
-        ax1.set_ylim(-0.015, 0.015)
+        ax1.set_ylim(-0.022, 0.022)
     # if encoder.method == 'subcortical':
     #     ax1.set_ylim(-0.015, 0.015)
     ax1.set_xlabel('Time (ms)')
     ax1.set_ylabel('Weights')
     ax1.set_title(f'Kernel with best alpha = {encoder.best_alpha}, r = {round(score.mean(0), 4)}')
-    # ax1.legend(labels=cluster)
+    ax1.legend(labels=cluster)
 
     # Hyper-parameter tuning
     x, y = encoder.best_alpha, np.max(encoder.mean_scores_alpha)
@@ -103,11 +101,11 @@ def main():
     alphas = generate_alphas(-3, 13, 2)
 
     for _, subject_id in enumerate(subjects):
-        print(f'Yay, {subject_id} is encoding!')
+        # print(f'Yay, {subject_id} is encoding!')
 
         # Cortical encoding
         method = 'cortical'
-        encoder = NeuralEncoder(subject_id, method, regularization=True, alphas=alphas)
+        encoder = NeuralEncoder(subject_id, method, regularization=False, alphas=alphas, init_estimator=100000.0)
         kernel, score = encoder.fit()
         save_kernel_and_score(subject_id, method, kernel, score)
 
@@ -117,7 +115,7 @@ def main():
 
         # Subcortical encoding
         method = 'subcortical'
-        subcoder = NeuralEncoder(subject_id, method, regularization=True, alphas=alphas)
+        subcoder = NeuralEncoder(subject_id, method, regularization=False, alphas=alphas, init_estimator=100000.0)
         kernel, score = subcoder.fit()
         save_kernel_and_score(subject_id, method, kernel, score)
 
