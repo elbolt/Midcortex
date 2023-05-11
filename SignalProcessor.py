@@ -1,7 +1,9 @@
-from scipy import signal
-from scipy.io import wavfile
+import os
 import numpy as np
 import textgrid
+
+from scipy import signal
+from scipy.io import wavfile
 
 
 class SoundProcessor():
@@ -31,7 +33,6 @@ class SoundProcessor():
         silent_seconds = self.textgrid[0][0].time
         silent_samples = int(np.round(silent_seconds * self.fs))
         self.data = self.data[silent_samples:]
-        # print(f'First {silent_seconds} s were cut, {silent_samples} samples.\n#')
 
     def extract_gammatone_envelope(self):
         """
@@ -323,20 +324,18 @@ class NeuralProcessor():
     def __init__(self, subject, method):
         self.fs = 4096
         self.method = method
-        # print(f'Preparing EEG for {method} modeling.\n#')
+
+        folder = '/Volumes/NeuroSSD/Midcortex/cleaned_arrays'
+        self.filename = os.path.join(folder, f'{subject}.npy')
 
         if method == 'cortical':
-            self.file_path = f'/Volumes/NeuroSSD/Midcortex/cortex/{subject}.npy'
-            self.data = np.load(self.file_path)
-
+            self.data = np.load(self.filename)
             self.filtered_eeg = None
             self.fs_goal = 128
             self.normalized_eeg = None
 
         elif method == 'subcortical':
-            self.file_path = f'/Volumes/NeuroSSD/Midcortex/subcortex/{subject}.npy'
-            self.data = np.load(self.file_path)
-
+            self.data = np.load(self.filename)
             self.filtered_eeg = None
             self.normalized_eeg = None
 
