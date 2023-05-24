@@ -19,6 +19,9 @@ subjects = [
 
 auditory_cluster = ['F3', 'FC1', 'FC5', 'FC6', 'FC2', 'F4']
 
+# # Find indeces of auditory cluster in all electrodes
+# indices = [electrodes.index(electrode) for electrode in auditory_cluster]
+
 electrodes = [
     'Fp1',
     'AF3',

@@ -196,7 +196,7 @@ def preprocess_eeg(subjects, method):
         elif method == 'subcortical':
             neural_processor = NeuralProcessor(subject_id, method='subcortical')
             neural_processor.high_pass_signal()
-            out_folder = f'{folder}/cortex_encoder'
+            out_folder = f'{folder}/subcortex_encoder'
         else:
             raise ValueError('Invalid method argument. Valid options are `cortical` or `subcortical`.')
 

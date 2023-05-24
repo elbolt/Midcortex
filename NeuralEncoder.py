@@ -1,189 +1,158 @@
+import os
 import numpy as np
 import mne
 from mne.decoding import ReceptiveField, TimeDelayingRidge
 from sklearn.model_selection import KFold
 from tqdm import tqdm
-from helpers import auditory_cluster, electrodes
 
 mne.set_log_level('ERROR')
 
 
 class NeuralEncoder:
-    def __init__(self, subject_id, method, regularization=True, alphas=None, init_estimator=0.0):
+    def __init__(self, subject_id, method, alphas=None):
         self.subject_id = subject_id
         self.method = method
-        self.regularization = regularization
-        if regularization not in [True, False]:
-            raise ValueError('Regularization must be `True` or `False``.')
-        self.init_estimator = init_estimator
-
+        self.file_path = '/Volumes/NeuroSSD/Midcortex/'
         self.alphas = alphas
 
         if method == 'cortical':
+            self.filename = os.path.join(self.file_path, 'cortex_encoder', f'{subject_id}.npy')
             self.fs = 128
-            self.trf_min, self.trf_max = -0.300, 0.800
-            self.xval_min, self.xval_max = -0.100, 0.300
+            self.trf_min, self.trf_max = -200e-3, 500e-3
+
             self.speech = np.load('audio/low_envelopes.npy')
-            self.cluster = auditory_cluster
-            indices = [electrodes.index(electrode) for electrode in self.cluster]
-            self.eeg = np.load(f'eeg/cortex/{subject_id}.npy')[..., indices]
+            self.eeg = np.load(self.filename)
 
         elif method == 'subcortical':
+            self.filename = os.path.join(self.file_path, 'subcortex_encoder', f'{subject_id}.npy')
             self.fs = 4096
-            self.trf_min, self.trf_max = -0.006, 0.026
-            self.xval_min, self.xval_max = 0.002, 0.014
+            self.trf_min, self.trf_max = -5e-3, 20e-3
+
             self.speech = np.load('audio/rectified_audios.npy')
-            self.cluster = ['Cz']  # ['Pz', 'Fz', 'Cz']
-            self.eeg = np.load(f'eeg/subcortex/{subject_id}.npy')  # [..., 2][..., np.newaxis]  # Cz only
+            self.eeg = np.load(self.filename)[..., 29:31]  # remove later
 
         else:
             raise ValueError(f'`{method}` invalid, method must be `cortical` or `subcortical`.')
 
+        # Determine kernel size (based on ReceptiveField source code)
+        lags_future = int(np.round(self.trf_min * self.fs))
+        lags_past = int((np.round(self.trf_max * self.fs) + 1))
+        self.kernel_size = abs(lags_future) + lags_past
+
+        # Subject-specific problems
         if self.subject_id == 'pilot03':
             # For this participant, we forgot to record right away, this is why the first trial is missing.
             self.speech = np.delete(self.speech, 0, axis=1)
 
-        self.kernel_size = int(np.ceil((self.trf_max - self.trf_min) * self.fs))
-
-        self.estimator = TimeDelayingRidge(
-            tmin=self.trf_min,
-            tmax=self.trf_max,
-            sfreq=self.fs,
-            reg_type='laplacian',
-            alpha=0.0
-        )
-
-        self.model = ReceptiveField(
-            tmin=None,
-            tmax=None,
-            estimator=None,
-            sfreq=self.fs,
-            scoring='corrcoef'
-        )
-
-        self.mean_scores_alpha = None
-        self.best_alpha = None
-
     def fit(self):
-        X = self.speech
-        y = self.eeg
+        speech = self.speech
+        eeg = self.eeg
 
-        if self.regularization:
-            n_splits_outer = 10
-            n_splits_inner = 5
-        elif not self.regularization:
-            n_splits_outer = self.speech.shape[1]
+        n_splits = 10
+        n_splits_alpha = 5
 
         # Initialize arrays to store scores and kernel weights
-        kernels = np.full((n_splits_outer, y.shape[2], self.kernel_size), np.nan)
-        scores = np.full((n_splits_outer, y.shape[2]), np.nan)
+        kernels = np.full((n_splits, eeg.shape[2], self.kernel_size), np.nan)
+        scores = np.full((n_splits, eeg.shape[2]), np.nan)
 
         # Initialize outer cross-validation
-        outer_k_folds = KFold(n_splits=n_splits_outer, shuffle=True, random_state=2004)
+        k_folds = KFold(n_splits=n_splits, shuffle=True, random_state=2023)
+        best_alphas = np.full((n_splits), np.nan)
 
-        for i, (train_indices, test_indices) in tqdm(
-                enumerate(outer_k_folds.split(np.arange(y.shape[1]))), total=n_splits_outer
-        ):
-            # ReceptiveField shape is (n_times, n_epochs, n_channels)
-            speech_train_outer = X[:, train_indices, :]
-            speech_test = X[:, test_indices, :]
-            eeg_train_outer = y[:, train_indices, :]
-            eeg_test = y[:, test_indices, :]
+        for fold_idx, (train_indices, test_indices) in tqdm(
+                enumerate(k_folds.split(np.arange(eeg.shape[1]))), total=n_splits):
+
+            # Split data into training/test – ReceptiveField shape is (n_times, n_epochs, n_channels)
+            speech_train = speech[:, train_indices, :]
+            speech_test = speech[:, test_indices, :]
+            eeg_train = eeg[:, train_indices, :]
+            eeg_test = eeg[:, test_indices, :]
 
             # Initialize the inner loop for hyperparameter tuning
-            best_alpha = None
-            best_inner_score = float('-inf')
-            mean_scores_alpha = np.full((len(self.alphas)), np.nan)
+            k_folds_alpha = KFold(n_splits=n_splits_alpha, shuffle=True, random_state=2023)
 
-            if self.regularization:
-                inner_k_folds = KFold(n_splits=n_splits_inner, shuffle=True, random_state=2004)
+            all_scores = np.full((len(self.alphas)), np.nan)
 
-                # Iterate over alphas for regularization
-                for alpha_idx, alpha in enumerate(self.alphas):
-                    inner_scores = []
+            # Iterate over alphas for regularization
+            for alpha_idx, alpha in enumerate(self.alphas):
 
-                    self.estimator.set_params(
-                        tmin=self.xval_min,
-                        tmax=self.xval_max,
+                mean_inner_scores = np.full((n_splits_alpha), np.nan)
+
+                # Iterate over inner folds for cross-validation
+                for alpha_fold_idx, (train_indices_alpha, validation_indices_alpha) in enumerate(
+                        k_folds_alpha.split(np.arange(speech_train.shape[1]))):
+
+                    # Initialize alpha tuning model
+                    alpha_estimator = TimeDelayingRidge(
+                        tmin=self.trf_min,
+                        tmax=self.trf_max,
+                        sfreq=self.fs,
+                        reg_type='laplacian',
                         alpha=alpha
                     )
-                    self.model.set_params(
-                        tmin=self.xval_min,
-                        tmax=self.xval_max,
-                        estimator=self.estimator
+
+                    alpha_model = ReceptiveField(
+                        tmin=self.trf_min,
+                        tmax=self.trf_max,
+                        estimator=alpha_estimator,
+                        sfreq=self.fs,
+                        scoring='corrcoef'
                     )
 
-                    # Iterate over inner folds for cross-validation
-                    for _, (inner_train_indices, inner_val_indices) in enumerate(
-                            inner_k_folds.split(np.arange(speech_train_outer.shape[1]))):
+                    # Split training data into training/validation
+                    alpha_speech_train = speech_train[:, train_indices_alpha, :]
+                    alpha_speech_validation = speech_train[:, validation_indices_alpha, :]
+                    alpha_eeg_train = eeg_train[:, train_indices_alpha, :]
+                    alpha_eeg_validation = eeg_train[:, validation_indices_alpha, :]
 
-                        # (n_times, n_epochs, n_channels)!
-                        speech_train = speech_train_outer[:, inner_train_indices, :]
-                        speech_val = speech_train_outer[:, inner_val_indices, :]
-                        eeg_train = eeg_train_outer[:, inner_train_indices, :]
-                        eeg_val = eeg_train_outer[:, inner_val_indices, :]
+                    alpha_model.fit(alpha_speech_train, alpha_eeg_train)
 
-                        self.model.fit(speech_train, eeg_train)
-                        inner_score = self.model.score(speech_val, eeg_val)  # score array for each electrode
-                        inner_scores.append(inner_score)  # lists with 5 score arrays
+                    # Store score of current fold
+                    inner_score = alpha_model.score(alpha_speech_validation, alpha_eeg_validation)  # (32,)
+                    mean_inner_score = inner_score.mean()  # (1,)
+                    mean_inner_scores[alpha_fold_idx] = mean_inner_score
 
-                    mean_inner_score = np.mean(inner_scores)  # mean score of electrodes for each of the 5 splits
+                mean_alpha_score = mean_inner_scores.mean()
+                all_scores[alpha_idx] = mean_alpha_score
 
-                    # Cache mean scroes across alphas for plotting
-                    mean_scores_alpha[alpha_idx] = mean_inner_score
+            # Find the best alpha
+            best_alpha_idx = np.where(all_scores == np.max(all_scores))[0][0]
+            best_alpha = self.alphas[best_alpha_idx]
+            best_alphas[fold_idx] = best_alpha
 
-                    # Update `best_alpha` if the score gets bigger.
-                    if mean_inner_score > best_inner_score:
-                        best_inner_score = mean_inner_score
-                        best_alpha = alpha
+            # Use the best alpha found in the inner loop in the outer loop and update lag range!
 
-                # Use the best alpha found in the inner loop in the outer loop and update lag range
-                self.estimator.set_params(
-                    tmin=self.trf_min,
-                    tmax=self.trf_max,
-                    alpha=best_alpha
-                )
-                self.model.set_params(
-                    tmin=self.trf_min,
-                    tmax=self.trf_max,
-                    estimator=self.estimator
-                )
+            # Initialize model
+            estimator = TimeDelayingRidge(
+                tmin=self.trf_min,
+                tmax=self.trf_max,
+                sfreq=self.fs,
+                reg_type='laplacian',
+                alpha=best_alpha
+            )
+            model = ReceptiveField(
+                tmin=self.trf_min,
+                tmax=self.trf_max,
+                estimator=estimator,
+                sfreq=self.fs,
+                scoring='corrcoef'
+            )
 
-            # If regularization is not used, directly set estimator and model paramets to full lags range
-            elif not self.regularization:
-                self.estimator.set_params(
-                    tmin=self.trf_min,
-                    tmax=self.trf_max,
-                    alpha=self.init_estimator
-                )
-                self.model.set_params(
-                    tmin=self.trf_min,
-                    tmax=self.trf_max,
-                    estimator=self.estimator
-                )
-
-            self.model.fit(speech_train_outer, eeg_train_outer)
+            model.fit(speech_train, eeg_train)
 
             # Evaluate the model on the outer test set
-            score = self.model.score(speech_test, eeg_test)
-            kernel = self.model.coef_.squeeze()
+            score = model.score(speech_test, eeg_test)
+            kernel = model.coef_.squeeze()
 
             # Cache model scores and model weights
-            scores[i, :] = score
-            kernels[i, ...] = kernel
+            scores[fold_idx, :] = score
+            kernels[fold_idx, ...] = kernel
 
         # Calculate the average scores and kernel weights
         mean_scores = np.nanmean(scores, axis=0)
         mean_kernels = np.nanmean(kernels, axis=0)
 
-        self.mean_scores_alpha = mean_scores_alpha
-
-        if self.regularization:
-            self.best_alpha = best_alpha
-        elif not self.regularization:
-            self.best_alpha = self.init_estimator
-
-        return mean_kernels, mean_scores
+        return mean_kernels, mean_scores, best_alphas
 
     def predict(self, X):
         # Predict the EEG response to speech input
