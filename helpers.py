@@ -58,7 +58,7 @@ electrodes = [
 ]
 
 bad_channels_dict = {
-    'p01': ['T8', 'PO4', 'O2'],
+    'p01': ['T8', 'PO4', 'O2', 'FC5'],
     'p02': [],
     'p03': ['AF4', 'F4', 'Oz', 'PO4'],
     'p04': [],

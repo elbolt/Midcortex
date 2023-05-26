@@ -17,7 +17,7 @@ class SoundProcessor():
             self.fs_env = 12000
             self.fs_goal = 128
             self.envelope = None
-            self.low_passed_signal = None
+            self.band_passed_signal = None
 
         elif self.method == 'subcortical':
             self.fs_goal = 4096
@@ -75,9 +75,9 @@ class SoundProcessor():
 
         self.envelope = envelope
 
-    def low_pass_signal(self):
+    def band_pass_signal(self):
         """
-        Low-pass filter procedure:
+        Band-pass filter procedure:
         """
         if self.method != 'cortical':
             raise MissingAttributeError('Method must be set to `cortical` to call this method')
@@ -108,7 +108,7 @@ class SoundProcessor():
 
         data = signal.filtfilt(fir_coeff, 1.0, data)
         data = signal.resample(data, int(len(data) / fs_env * fs_goal), window=('kaiser', 5.0))
-        self.filter2 = data  # control plots
+        # self.filter2 = data  # control plots
 
         del fs_env, cutoff_freq, trans_width, nyq_rate, order, freq_points, gain_points, fir_coeff
 
@@ -166,7 +166,7 @@ class SoundProcessor():
         data = signal.filtfilt(highpass_taps, 1.0, data)  # high-pass filter
         data = signal.filtfilt(lowpass_taps, 1.0, data)  # low-pass filter
 
-        self.low_passed_signal = data
+        self.band_passed_signal = data
 
     def high_pass_signal(self):
         """
@@ -201,7 +201,7 @@ class SoundProcessor():
 
         data = signal.filtfilt(fir_coeff, 1.0, data)
         data = signal.resample(data, int(len(data) * fs_goal / fs), window=('kaiser', 5.0))
-        self.filter2 = data  # control plots
+        # self.filter2 = data  # control plots
 
         del fs, cutoff_freq, trans_width, nyq_rate, order, freq_points, gain_points, fir_coeff
 
@@ -226,7 +226,7 @@ class SoundProcessor():
         )
 
         data = signal.filtfilt(fir_coeff, 1.0, data)
-        self.filter3 = data  # control plots
+        # self.filter3 = data  # control plots
 
         """
         Half-wave rectification.
@@ -246,7 +246,7 @@ class SoundProcessor():
         """
         if self.method == 'cortical':
             fs = self.fs_goal
-            data = self.low_passed_signal
+            data = self.band_passed_signal
         elif self.method == 'subcortical':
             fs = self.fs_goal
             data = self.high_passed_signal
@@ -256,7 +256,7 @@ class SoundProcessor():
         data = data[samples_to_cut:(len(data) - samples_to_cut)]
 
         if self.method == 'cortical':
-            self.low_passed_signal = data
+            self.band_passed_signal = data
         elif self.method == 'subcortical':
             self.high_passed_signal = data
 
@@ -330,9 +330,10 @@ class NeuralProcessor():
 
         if method == 'cortical':
             self.data = np.load(self.filename)
+            self.resampled_eeg = None
+            self.cleaned_data = None
             self.filtered_eeg = None
             self.fs_goal = 128
-            self.normalized_eeg = None
 
         elif method == 'subcortical':
             self.data = np.load(self.filename)
@@ -342,7 +343,7 @@ class NeuralProcessor():
         else:
             raise ValueError(f'`{method}` must be `cortical` or `subcortical`.')
 
-    def low_pass_signal(self):
+    def resample(self):
         """
         Low-pass filter procedure:
         """
@@ -388,7 +389,6 @@ class NeuralProcessor():
                     new_num_samples,
                     window=('kaiser', 5.0)
                 )
-        self.filter1 = resampled_data
 
         data = resampled_data
 
@@ -398,7 +398,6 @@ class NeuralProcessor():
         2. High-pass filter the signal at 0.5 Hz (one-pass zero-phase hamming-windowed sinc FIR controlled for filter
         delay, order 417 (Florine: 424), transition width 1 Hz).
         """
-        nyq_rate = fs_goal / 2
         filter_freq = 0.5
         trans_width = 1.0
         order = determine_filter_order(fs_goal, trans_width)
@@ -414,7 +413,64 @@ class NeuralProcessor():
         data = signal.filtfilt(highpass_taps, 1.0, data, axis=2)
         # self.filter2 = data
 
+        self.resampled_eeg = data
+
         del filter_freq, trans_width, order, highpass_taps
+
+    def clean_signal(self, window_duration=1.0):
+        """
+        Function to clean signal by removing artifacts.
+
+        Parameters:
+        signal (np.ndarray): The input signal. Should be a 3D numpy array of shape (n_signals, n_channels, n_samples)
+        fs (int): The sampling rate of the signal
+        window_duration (float): The duration of the window for artifact removal, in seconds
+
+        Returns:
+        np.ndarray: The cleaned signal
+        """
+        if self.method != 'cortical':
+            raise MissingAttributeError('Method must be set to `cortical` to call this method')
+
+        fs_goal = self.fs_goal
+        data = self.resampled_eeg
+
+        # Copy the signal for processing
+        data_clean = np.copy(data)
+
+        # Compute the window size in samples
+        window_samples = int(window_duration * fs_goal)
+
+        # Compute mean and standard deviation for all channels and signals at once
+        mean = np.mean(data, axis=2)
+        std = np.std(data, axis=2)
+
+        # Identify the indices of the signal that are > 5 std from the mean for all channels and signals
+        indices_list = np.abs(data - mean[:, :, None]) > 5 * std[:, :, None]
+
+        # Apply the cleaning process to each signal in each channel
+        for i in range(window_samples//2, data.shape[2] - window_samples//2):
+            # Compute the start and end of the window
+            start = i - window_samples//2
+            end = i + window_samples//2
+
+            # Identify if this sample is in a window that should be zeroed out
+            mask = np.logical_not(np.any(indices_list[:, :, start:end], axis=2))
+
+            # Apply the mask
+            data_clean[:, :, i] *= mask
+
+        self.cleaned_data = data_clean
+
+    def band_pass_signal(self):
+        """
+        Low-pass filter procedure:
+        """
+        if self.method != 'cortical':
+            raise MissingAttributeError('Method must be set to `cortical` to call this method')
+
+        fs_goal = self.fs_goal
+        data = self.cleaned_data
 
         """
         3. Band-pass filter signal between 1–9 Hz.

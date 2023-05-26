@@ -128,7 +128,7 @@ def preprocess_speech(audio_snips, method):
     eeg_length = int(50 * fs)  # 50 seconds
 
     # Initialize a NaN-filled array with shape for ReceptiveField estimator (n_times, n_epochs, n_channels)
-    all_data = np.full((eeg_length, len(audio_snips)), np.nan)
+    data = np.full((eeg_length, len(audio_snips)), np.nan)
 
     # Process each audio snippet based on the method
     for idx, snip_id in enumerate(audio_snips):
@@ -137,9 +137,9 @@ def preprocess_speech(audio_snips, method):
 
         if method == 'cortical':
             sound_processor.extract_gammatone_envelope()
-            sound_processor.low_pass_signal()
+            sound_processor.band_pass_signal()
             sound_processor.cut_ends(cut=1)
-            signal = sound_processor.low_passed_signal
+            signal = sound_processor.band_passed_signal
         elif method == 'subcortical':
             sound_processor.high_pass_signal()
             sound_processor.cut_ends(cut=1)
@@ -149,18 +149,23 @@ def preprocess_speech(audio_snips, method):
         padding_length = eeg_length - signal.shape[0]
         signal = np.pad(signal, (0, padding_length), constant_values=np.nan)
 
-        all_data[:, idx] = signal
+        data[:, idx] = signal
 
-    # Normalize data, replace NaNs with zeros, and add a new axis for the number of audio channels
-    normalized_data = (all_data - np.nanmean(all_data)) / np.nanstd(all_data)
-    normalized_data = np.nan_to_num(normalized_data, nan=0.0)
-    normalized_data = normalized_data[..., np.newaxis]
+    # Add new axis to match EEG shape
+    data = data[..., np.newaxis]
+
+    # # Replace NaNs with zeros, and add a new axis for the number of audio channels
+    # data = np.nan_to_num(all_data, nan=0.0)
+
+    # # Normalize data
+    # normalized_data = (all_data - np.nanmean(all_data)) / np.nanstd(all_data)
+    # normalized_data = normalized_data[..., np.newaxis]
 
     # Create the directory if it doesn't exist
     os.makedirs('audio', exist_ok=True)
 
     # Save the processed audio data to disk
-    np.save(npy_file, normalized_data)
+    np.save(npy_file,  data)
 
     print(f'All speech data for {method} encoder were cached.')
 
@@ -191,7 +196,9 @@ def preprocess_eeg(subjects, method):
         # Process EEG data based on the specified method
         if method == 'cortical':
             neural_processor = NeuralProcessor(subject_id, method='cortical')
-            neural_processor.low_pass_signal()
+            neural_processor.resample()
+            neural_processor.clean_signal(window_duration=0.5)
+            neural_processor.band_pass_signal()
             out_folder = f'{folder}/cortex_encoder'
         elif method == 'subcortical':
             neural_processor = NeuralProcessor(subject_id, method='subcortical')
@@ -202,8 +209,7 @@ def preprocess_eeg(subjects, method):
 
         # Cut the onset and normalize the signal
         neural_processor.cut_onset(cut=1)
-        neural_processor.normalize()
-        eeg = neural_processor.normalized_eeg
+        eeg = neural_processor.filtered_eeg
 
         # Transpose the data to the shape required for ReceptiveField estimator (n_times, n_epochs, n_channels)
         eeg = eeg.transpose((2, 0, 1))
@@ -227,10 +233,10 @@ if __name__ == '__main__':
     preprocess_speech(audio_snips, method='subcortical')
     print('--------------------')
 
-    # EEG extraction
-    print('EEG signal exctraction.')
-    extract_neural_signal(subjects, bad_channels_dict)
-    print('--------------------')
+    # # EEG extraction
+    # print('EEG signal exctraction.')
+    # extract_neural_signal(subjects, bad_channels_dict)
+    # print('--------------------')
 
     # EEG preprocessing
     preprocess_eeg(subjects, method='cortical')

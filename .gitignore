@@ -6,4 +6,5 @@ kernels/
 logs/
 plots/
 analysis/
-encoding_tests.ipynb/
+encoding_tests.ipynb
+inspect.ipynb
