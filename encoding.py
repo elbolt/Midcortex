@@ -9,6 +9,22 @@ def generate_alphas(start, stop, step):
     return [float("{:.8f}".format(10 ** i)) for i in range(start, stop, step)]
 
 
+def manual_transform(data, mean, std):
+    """
+    Manually transform the data using pre-computed mean and standard deviation.
+    """
+    return (data - mean) / std
+
+
+def manual_fit_transform(data):
+    """
+    Manually compute the mean and standard deviation of the data and transform it.
+    """
+    mean = np.mean(data)
+    std = np.std(data)
+    return manual_transform(data, mean, std)
+
+
 def save_kernel_and_score(subject_id, method, kernel, score, folder='kernels'):
     os.makedirs(os.path.join(folder, method), exist_ok=True)
     kernel_filename = os.path.join(folder, method, f'{subject_id}_kernel.npy')

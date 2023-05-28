@@ -69,6 +69,10 @@ class NeuralEncoder:
             eeg_train = eeg[:, train_indices, :]
             eeg_test = eeg[:, test_indices, :]
 
+            # Compute the mean and standard deviation using the training data of the outer fold, ignoring NaN values
+            mean = np.nanmean(speech_train)
+            std = np.nanstd(speech_train)
+
             best_score = -np.inf
             best_alpha = None
 
@@ -158,3 +162,24 @@ class NeuralEncoder:
     def predict(self, X):
         # Predict the EEG response to speech input
         return self.model.predict(X)
+
+
+def manual_transform(data, mean, std):
+    """
+    Manually transform the data using pre-computed mean and standard deviation,
+    handling NaN values.
+    """
+    normalized_data = np.where(np.isnan(data), np.nan, (data - mean) / std)
+    normalized_data = np.nan_to_num(normalized_data, nan=0.0)
+    return normalized_data
+
+
+def manual_fit_transform(data):
+    """
+    Manually compute the mean and standard deviation of the data, and transform it,
+    handling NaN values.
+    """
+    mean = np.nanmean(data)
+    std = np.nanstd(data)
+    return manual_transform(data, mean, std)
+

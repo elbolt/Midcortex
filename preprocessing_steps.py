@@ -200,16 +200,19 @@ def preprocess_eeg(subjects, method):
             neural_processor.clean_signal(window_duration=0.5)
             neural_processor.band_pass_signal()
             out_folder = f'{folder}/cortex_encoder'
+
         elif method == 'subcortical':
             neural_processor = NeuralProcessor(subject_id, method='subcortical')
             neural_processor.high_pass_signal()
+            neural_processor.clean_signal(window_duration=0.5)
             out_folder = f'{folder}/subcortex_encoder'
+
         else:
             raise ValueError('Invalid method argument. Valid options are `cortical` or `subcortical`.')
 
         # Cut the onset and normalize the signal
         neural_processor.cut_onset(cut=1)
-        eeg = neural_processor.filtered_eeg
+        eeg = neural_processor.data
 
         # Transpose the data to the shape required for ReceptiveField estimator (n_times, n_epochs, n_channels)
         eeg = eeg.transpose((2, 0, 1))
@@ -227,18 +230,18 @@ def preprocess_eeg(subjects, method):
 
 
 if __name__ == '__main__':
-    # Speech processing
-    print('Speech signal processing.')
-    preprocess_speech(audio_snips, method='cortical')
-    preprocess_speech(audio_snips, method='subcortical')
-    print('--------------------')
+    # # Speech processing
+    # print('Speech signal processing.')
+    # preprocess_speech(audio_snips, method='cortical')
+    # preprocess_speech(audio_snips, method='subcortical')
+    # print('--------------------')
 
     # # EEG extraction
     # print('EEG signal exctraction.')
     # extract_neural_signal(subjects, bad_channels_dict)
     # print('--------------------')
 
-    # EEG preprocessing
-    preprocess_eeg(subjects, method='cortical')
+    # # EEG preprocessing
+    # preprocess_eeg(subjects, method='cortical')
     preprocess_eeg(subjects, method='subcortical')
     print('--------------------')

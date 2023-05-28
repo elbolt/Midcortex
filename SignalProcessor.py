@@ -329,16 +329,13 @@ class NeuralProcessor():
         self.filename = os.path.join(folder, f'{subject}.npy')
 
         if method == 'cortical':
-            self.data = np.load(self.filename)
-            self.resampled_eeg = None
-            self.cleaned_data = None
-            self.filtered_eeg = None
             self.fs_goal = 128
+            self.raw_data = np.load(self.filename)
+            self.data = None
 
         elif method == 'subcortical':
-            self.data = np.load(self.filename)
-            self.filtered_eeg = None
-            self.normalized_eeg = None
+            self.raw_data = np.load(self.filename)
+            self.data = None
 
         else:
             raise ValueError(f'`{method}` must be `cortical` or `subcortical`.')
@@ -352,7 +349,7 @@ class NeuralProcessor():
 
         fs_goal = self.fs_goal
         fs = self.fs
-        data = self.data
+        data = self.raw_data
 
         """
         1. Downsample signal to 128 Hz (anti-aliasing filter at 51.2 Hz: one-pass zero-phase hamming-windowed sinc FIR
@@ -411,9 +408,8 @@ class NeuralProcessor():
         )
 
         data = signal.filtfilt(highpass_taps, 1.0, data, axis=2)
-        # self.filter2 = data
 
-        self.resampled_eeg = data
+        self.data = data
 
         del filter_freq, trans_width, order, highpass_taps
 
@@ -429,38 +425,45 @@ class NeuralProcessor():
         Returns:
         np.ndarray: The cleaned signal
         """
-        if self.method != 'cortical':
-            raise MissingAttributeError('Method must be set to `cortical` to call this method')
+        if self.method == 'cortical':
+            fs = self.fs_goal
+        elif self.method == 'subcortical':
+            fs = self.fs
 
-        fs_goal = self.fs_goal
-        data = self.resampled_eeg
-
-        # Copy the signal for processing
-        data_clean = np.copy(data)
+        data = self.data
 
         # Compute the window size in samples
-        window_samples = int(window_duration * fs_goal)
+        window_samples = int(window_duration * fs)
+
+        # Compute padding size and apply padding
+        padding_samples = window_samples // 2
+        padding = np.tile(np.mean(data, axis=2, keepdims=True), (1, 1, padding_samples))
+        data_padded = np.concatenate([padding, data, padding], axis=2)
+
+        # Copy the padded signal for processing
+        data_clean = np.copy(data_padded)
 
         # Compute mean and standard deviation for all channels and signals at once
-        mean = np.mean(data, axis=2)
-        std = np.std(data, axis=2)
+        mean = np.mean(data_padded, axis=2)
+        std = np.std(data_padded, axis=2)
 
         # Identify the indices of the signal that are > 5 std from the mean for all channels and signals
-        indices_list = np.abs(data - mean[:, :, None]) > 5 * std[:, :, None]
+        indices_list = np.abs(data_padded - mean[:, :, None]) > 5 * std[:, :, None]
 
         # Apply the cleaning process to each signal in each channel
-        for i in range(window_samples//2, data.shape[2] - window_samples//2):
+        for i in range(padding_samples, data_padded.shape[2] - padding_samples):
             # Compute the start and end of the window
-            start = i - window_samples//2
-            end = i + window_samples//2
+            start = i - padding_samples
+            end = i + padding_samples
 
             # Identify if this sample is in a window that should be zeroed out
             mask = np.logical_not(np.any(indices_list[:, :, start:end], axis=2))
 
             # Apply the mask
-            data_clean[:, :, i] *= mask
+            data_clean[:, :, i][~mask] = np.nan
 
-        self.cleaned_data = data_clean
+        # Remove padding
+        self.data = data_clean[:, :, padding_samples:-padding_samples]
 
     def band_pass_signal(self):
         """
@@ -470,7 +473,7 @@ class NeuralProcessor():
             raise MissingAttributeError('Method must be set to `cortical` to call this method')
 
         fs_goal = self.fs_goal
-        data = self.cleaned_data
+        data = self.data
 
         """
         3. Band-pass filter signal between 1–9 Hz.
@@ -504,7 +507,7 @@ class NeuralProcessor():
         data = signal.filtfilt(highpass_taps, 1.0, data, axis=2)
         data = signal.filtfilt(lowpass_taps, 1.0, data, axis=2)
 
-        self.filtered_eeg = data
+        self.data = data
 
     def high_pass_signal(self):
         """
@@ -515,7 +518,7 @@ class NeuralProcessor():
             raise MissingAttributeError('Method must be set to `subcortical` to call this method.')
 
         fs = self.fs
-        data = self.data
+        data = self.raw_data
 
         # Imitate anti-aliasing filter
         cutoff_freq = 1638.0
@@ -558,7 +561,7 @@ class NeuralProcessor():
 
         data = signal.filtfilt(fir_coeff, 1.0, data, axis=2)
 
-        self.filtered_eeg = data
+        self.data = data
 
     def cut_onset(self, cut=1):
         """
@@ -574,14 +577,14 @@ class NeuralProcessor():
         elif self.method == 'subcortical':
             fs = self.fs
 
-        data = self.filtered_eeg
+        data = self.data
         samples_to_cut = cut * fs
 
-        self.filtered_eeg = data[..., samples_to_cut:]
+        self.data = data[..., samples_to_cut:]
 
     def normalize(self):
-        filtered_eeg = self.filtered_eeg
-        self.normalized_eeg = (filtered_eeg - np.mean(filtered_eeg)) / np.std(filtered_eeg)
+        data = self.data
+        self.data = (data - np.mean(data)) / np.std(data)
 
 
 class MissingAttributeError(Exception):
