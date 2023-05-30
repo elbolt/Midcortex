@@ -138,11 +138,11 @@ def preprocess_speech(audio_snips, method):
         if method == 'cortical':
             sound_processor.extract_gammatone_envelope()
             sound_processor.band_pass_signal()
-            sound_processor.cut_ends(cut=1)
+            sound_processor.cut_ends(cut=1.0)
             signal = sound_processor.band_passed_signal
         elif method == 'subcortical':
             sound_processor.high_pass_signal()
-            sound_processor.cut_ends(cut=1)
+            sound_processor.cut_ends(cut=1.0)
             signal = sound_processor.high_passed_signal
 
         # Pad the signal with NaNs to match the length of EEG data
@@ -151,21 +151,17 @@ def preprocess_speech(audio_snips, method):
 
         data[:, idx] = signal
 
+    # Normalize data
+    normalized_data = (data - np.nanmean(data)) / np.nanstd(data)
+
     # Add new axis to match EEG shape
-    data = data[..., np.newaxis]
-
-    # # Replace NaNs with zeros, and add a new axis for the number of audio channels
-    # data = np.nan_to_num(all_data, nan=0.0)
-
-    # # Normalize data
-    # normalized_data = (all_data - np.nanmean(all_data)) / np.nanstd(all_data)
-    # normalized_data = normalized_data[..., np.newaxis]
+    normalized_data = normalized_data[..., np.newaxis]
 
     # Create the directory if it doesn't exist
     os.makedirs('audio', exist_ok=True)
 
     # Save the processed audio data to disk
-    np.save(npy_file,  data)
+    np.save(npy_file,  normalized_data)
 
     print(f'All speech data for {method} encoder were cached.')
 
@@ -212,7 +208,11 @@ def preprocess_eeg(subjects, method):
 
         # Cut the onset and normalize the signal
         neural_processor.cut_onset(cut=1)
-        eeg = neural_processor.data
+        neural_processor.normalize()
+
+        # Replace NaNs with zeros
+        eeg = neural_processor.data  # (n_times, n_channels)
+        eeg = np.nan_to_num(eeg, nan=0.0)
 
         # Transpose the data to the shape required for ReceptiveField estimator (n_times, n_epochs, n_channels)
         eeg = eeg.transpose((2, 0, 1))
@@ -230,18 +230,21 @@ def preprocess_eeg(subjects, method):
 
 
 if __name__ == '__main__':
+
+    subjects = ['p27']
+
     # # Speech processing
     # print('Speech signal processing.')
     # preprocess_speech(audio_snips, method='cortical')
     # preprocess_speech(audio_snips, method='subcortical')
     # print('--------------------')
 
-    # # EEG extraction
-    # print('EEG signal exctraction.')
-    # extract_neural_signal(subjects, bad_channels_dict)
-    # print('--------------------')
+    # EEG extraction
+    print('EEG signal exctraction.')
+    extract_neural_signal(subjects, bad_channels_dict)
+    print('--------------------')
 
-    # # EEG preprocessing
-    # preprocess_eeg(subjects, method='cortical')
+    # EEG preprocessing
+    preprocess_eeg(subjects, method='cortical')
     preprocess_eeg(subjects, method='subcortical')
     print('--------------------')

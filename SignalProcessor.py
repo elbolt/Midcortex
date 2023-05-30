@@ -28,7 +28,7 @@ class SoundProcessor():
 
     def remove_silent_onset(self):
         """
-        Removes the silent onset from the beginning of the audio file.
+        Removes the silent onset from the beginning of the audio file. Method directly modifies `self.data`.
         """
         silent_seconds = self.textgrid[0][0].time
         silent_samples = int(np.round(silent_seconds * self.fs))
@@ -250,6 +250,8 @@ class SoundProcessor():
         elif self.method == 'subcortical':
             fs = self.fs_goal
             data = self.high_passed_signal
+
+        cut = int(cut)
 
         # Cut onset and cut end
         samples_to_cut = cut * fs
@@ -584,7 +586,7 @@ class NeuralProcessor():
 
     def normalize(self):
         data = self.data
-        self.data = (data - np.mean(data)) / np.std(data)
+        self.data = (data - np.nanmean(data)) / np.nanstd(data)
 
 
 class MissingAttributeError(Exception):
