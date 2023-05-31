@@ -57,6 +57,11 @@ electrodes = [
     'Cz'
 ]
 
+select_electrodes = ['Fz', 'Cz', 'Pz']
+
+electrode_indices = [electrodes.index(electrode) for electrode in select_electrodes]
+
+
 bad_channels_dict = {
     'p01': ['T8', 'PO4', 'O2', 'FC5'],
     'p02': [],

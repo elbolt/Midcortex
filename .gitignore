@@ -1,5 +1,5 @@
-__pychache__/
-archive/
+__pycache__/
+archive
 audio/
 eeg/
 kernels/

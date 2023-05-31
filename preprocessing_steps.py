@@ -193,14 +193,14 @@ def preprocess_eeg(subjects, method):
         if method == 'cortical':
             neural_processor = NeuralProcessor(subject_id, method='cortical')
             neural_processor.resample()
-            neural_processor.clean_signal(window_duration=0.5)
+            # neural_processor.clean_signal(window_duration=0.5)
             neural_processor.band_pass_signal()
             out_folder = f'{folder}/cortex_encoder'
 
         elif method == 'subcortical':
             neural_processor = NeuralProcessor(subject_id, method='subcortical')
             neural_processor.high_pass_signal()
-            neural_processor.clean_signal(window_duration=0.5)
+            # neural_processor.clean_signal(window_duration=0.5)
             out_folder = f'{folder}/subcortex_encoder'
 
         else:
@@ -231,7 +231,7 @@ def preprocess_eeg(subjects, method):
 
 if __name__ == '__main__':
 
-    subjects = ['p27']
+    # subjects = ['p30']
 
     # # Speech processing
     # print('Speech signal processing.')
@@ -239,12 +239,12 @@ if __name__ == '__main__':
     # preprocess_speech(audio_snips, method='subcortical')
     # print('--------------------')
 
-    # EEG extraction
-    print('EEG signal exctraction.')
-    extract_neural_signal(subjects, bad_channels_dict)
-    print('--------------------')
+    # # EEG extraction
+    # print('EEG signal exctraction.')
+    # extract_neural_signal(subjects, bad_channels_dict)
+    # print('--------------------')
 
     # EEG preprocessing
-    preprocess_eeg(subjects, method='cortical')
+    # preprocess_eeg(subjects, method='cortical')
     preprocess_eeg(subjects, method='subcortical')
     print('--------------------')

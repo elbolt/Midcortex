@@ -6,7 +6,7 @@ from helpers import subjects
 
 
 def generate_alphas(start, stop, step):
-    return [float("{:.8f}".format(10 ** i)) for i in range(start, stop, step)]
+    return [float("{:.8f}".format(2 ** i)) for i in range(start, stop, step)]
 
 
 def manual_transform(data, mean, std):
